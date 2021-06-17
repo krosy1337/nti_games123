@@ -1,0 +1,77 @@
+version: '3.7'
+
+services:
+  db:
+    container_name: postgres
+    hostname: postgres
+    image: postgres:12.0-alpine
+    env_file:
+      - ./.env
+    networks:
+      - main
+    ports:
+      - "5432:5432"
+    restart: on-failure
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    
+  redis:
+    hostname: redis
+    image: redis:alpine
+    networks:
+      - main
+    restart: on-failure
+
+  web:
+    build: .
+    command: sh -c "python manage.py collectstatic --no-input --clear && python manage.py migrate --noinput && gunicorn nti_games.wsgi:application --bind 0.0.0.0:8800 -w 2"
+    container_name: web
+    hostname: web
+    image: web-image
+    depends_on:
+      - db
+      - redis
+    expose:
+      - "8800"
+    volumes:
+      - static_volume:/home/app/web/staticfiles
+    env_file:
+      - ./.env
+    networks:
+      - main
+    restart: on-failure
+  
+  celery_worker:
+    command: "celery -A nti_games worker -l info"
+    container_name: celery_worker
+    depends_on:
+      - web
+      - db
+      - redis
+    hostname: celery_worker
+    image: web-image
+    env_file:
+      - ./.env
+    networks:
+      - main
+    restart: on-failure
+
+  nginx:
+    build: ./nginx
+    container_name: nginx
+    depends_on:
+      - web
+    volumes:
+      - static_volume:/home/app/web/staticfiles
+    networks:
+      - main
+    ports:
+      - 1337:80
+    restart: on-failure
+  
+volumes:
+  postgres_data:
+  static_volume:
+
+networks:
+  main:
